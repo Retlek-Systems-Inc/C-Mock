@@ -74,16 +74,16 @@ cmock_lookup(const char *fname)
     return dlsym(RTLD_NEXT, fname);
 }
 
-#define CMOCK_MOCK_METHOD(_Ret, _FunctionName, _Args) \
-    MOCK_METHOD(_Ret, _FunctionName, _Args); \
+#define CMOCK_MOCK_METHOD(_Ret, _FunctionName, _Args, ...) \
+    MOCK_METHOD(_Ret, _FunctionName, _Args, ##__VA_ARGS__); \
 \
     typedef _Ret (*_FunctionName##_cmockType)(GMOCK_PP_REPEAT(CMOCK_INTERNAL_NO_PARAMETER_NAME, (GMOCK_INTERNAL_SIGNATURE(_Ret, _Args)), GMOCK_PP_NARG0 _Args)); \
     /* NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables) */ \
     static _FunctionName##_cmockType cmock_real_##_FunctionName;
 
-#define CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, _RealFunctionPtr, _N, _Signature) \
+#define CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, _RealFunctionPtr, _N, _Signature, _Spec) \
     /* NOLINTNEXTLINE(misc-unused-parameters,readability-inconsistent-declaration-parameter-name) */ \
-    CMOCK_INTERNAL_RETURN_TYPE(_Signature) _FunctionName(GMOCK_PP_REPEAT(GMOCK_INTERNAL_PARAMETER, _Signature, _N)) { \
+    CMOCK_INTERNAL_RETURN_TYPE(_Signature) _FunctionName(GMOCK_PP_REPEAT(GMOCK_INTERNAL_PARAMETER, _Signature, _N)) _Spec { \
         _ClassName *mock = _ClassName::cmock_get_instance(); \
         if (mock != nullptr) { \
             return mock->_FunctionName(GMOCK_PP_REPEAT(GMOCK_INTERNAL_FORWARD_ARG, _Signature, _N)); \
@@ -93,7 +93,12 @@ cmock_lookup(const char *fname)
             std::ostringstream msg; \
             msg << "Error: Function " << #_FunctionName; \
             msg << " not found. Neither mock nor real function is present."; \
-            throw std::logic_error(msg.str()); \
+            if constexpr (std::is_same_v<decltype(&_FunctionName), \
+                CMOCK_INTERNAL_RETURN_TYPE(_Signature)(*)(GMOCK_PP_REPEAT(CMOCK_INTERNAL_NO_PARAMETER_NAME, _Signature, _N)) noexcept>) { \
+                std::terminate(); \
+            } else { \
+                throw std::logic_error(msg.str()); \
+            } \
         } \
         return _RealFunctionPtr(GMOCK_PP_REPEAT(GMOCK_INTERNAL_FORWARD_ARG, _Signature, _N)); \
     }
@@ -101,16 +106,18 @@ cmock_lookup(const char *fname)
 #define CMOCK_REAL_FUNCTION(_ClassName, _FunctionName) \
     _ClassName::cmock_real_##_FunctionName
 
-#define CMOCK_MOCK_FUNCTION(_ClassName,  _Ret, _FunctionName, _Args) \
+#define CMOCK_MOCK_FUNCTION(_ClassName,  _Ret, _FunctionName, _Args, ...) \
     /* NOLINTNEXTLINE(cert-err58-cpp,cppcoreguidelines-avoid-non-const-global-variables,cppcoreguidelines-pro-type-cstyle-cast) */ \
     _ClassName::_FunctionName##_cmockType CMOCK_REAL_FUNCTION(_ClassName, _FunctionName) = (_ClassName::_FunctionName##_cmockType)cmock_lookup(#_FunctionName); \
-    CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, CMOCK_REAL_FUNCTION(_ClassName, _FunctionName), GMOCK_PP_NARG0 _Args, (GMOCK_INTERNAL_SIGNATURE(_Ret, _Args)))
+    CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, CMOCK_REAL_FUNCTION(_ClassName, _FunctionName), GMOCK_PP_NARG0 _Args, (GMOCK_INTERNAL_SIGNATURE(_Ret, _Args)), ##__VA_ARGS__)
+
+// Note these do not support the _Spec options of noexcept.
 
 #define CMOCK_INTERNAL_MOCK_FUNCTIONN(_ClassName, _FunctionName, _N, _Signature) \
     typedef CMOCK_INTERNAL_RETURN_TYPE(_Signature) (*_ClassName##_##_FunctionName##_cmockType)(GMOCK_PP_REPEAT(CMOCK_INTERNAL_NO_PARAMETER_NAME, _Signature, _N)); \
     /* NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast) */ \
     static _ClassName##_##_FunctionName##_cmockType cmock_real_##_FunctionName = (_ClassName##_##_FunctionName##_cmockType)cmock_lookup(#_FunctionName); \
-    CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, cmock_real_##_FunctionName, _N, _Signature)
+    CMOCK_INTERNAL_IMPLEMENT_FUNCTION(_ClassName, _FunctionName, cmock_real_##_FunctionName, _N, _Signature, ())
 
 #define CMOCK_MOCK_FUNCTION0(c, n, ...) \
     CMOCK_INTERNAL_MOCK_FUNCTIONN(c, n, 0, (::testing::internal::identity_t<__VA_ARGS__>))
