@@ -1,21 +1,11 @@
 
-cmake_minimum_required(VERSION 3.14)
-
-if( POLICY CMP0048 )
-    cmake_policy(SET CMP0048 NEW) # project version
-endif()
-
-if( POLICY CMP0076 )
-    cmake_policy(SET CMP0076 NEW) # full paths
-endif()
-
-if( POLICY CMP0077 )
-    cmake_policy(SET CMP0077 NEW) # options do nothing when defined as variable.
-endif()
-
-option(BUILD_TESTING "Build tests for C-Mock" OFF)
+cmake_minimum_required(VERSION 3.23)
 
 project(cmock VERSION 0.1.2 LANGUAGES C CXX)
+
+include(GNUInstallDirs)
+
+option(BUILD_TESTING "Build tests for C-Mock" OFF)
 
 # -------------------------------------------------------------------
 # If not already declared - get gmock.
@@ -31,7 +21,7 @@ if (BUILD_TESTING AND NOT TARGET gmock)
     # settings on Windows
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE) 
     FetchContent_MakeAvailable(googletest)
-    set(GTEST_ROOT ${gootletest_SOURCE_DIR} CACHE STRING "Root dir for find(GTest)")
+    set(GTEST_ROOT ${googletest_SOURCE_DIR} CACHE STRING "Root dir for find(GTest)")
 endif()
 
 # -------------------------------------------------------------------
@@ -39,16 +29,19 @@ add_library(gmock_c INTERFACE)
 
 target_sources(gmock_c
     INTERFACE
-        include/cmock/cmock-function-class-mockers.h
-        include/cmock/cmock-function-mockers.h
-        include/cmock/cmock-internal.h
-        include/cmock/cmock-spec-builders.h
-        include/cmock/cmock.h
+        FILE_SET HEADERS TYPE HEADERS
+        BASE_DIRS include
+        FILES
+            include/cmock/cmock-function-class-mockers.h
+            include/cmock/cmock-function-mockers.h
+            include/cmock/cmock-internal.h
+            include/cmock/cmock-spec-builders.h
+            include/cmock/cmock.h
 )
 
 target_include_directories(gmock_c SYSTEM
     INTERFACE
-        include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 
 target_link_libraries( gmock_c
@@ -61,3 +54,16 @@ target_link_libraries( gmock_c
 if (BUILD_TESTING)
     add_subdirectory(test)
 endif()
+
+# -------------------------------------------------------------------
+# Install the target, exporting headers automatically via FILE_SET
+install(TARGETS gmock_c
+    EXPORT gmock_cTargets
+    FILE_SET HEADERS
+)
+
+# Export target for find_package() support
+install(EXPORT gmock_cTargets
+    NAMESPACE cmock::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/gmock_c
+)
